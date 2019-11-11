@@ -31,15 +31,11 @@ MeRGBLed led(13);
 // Misc
 MeBuzzer buzzer;
 
-// PID
-double SetpointLeft, InputLeft, OutputLeft;
-double SetpointRight, InputRight, OutputRight;
-PID leftPID(&InputLeft, &OutputLeft, &SetpointLeft, 2.5, 0.5, 0, DIRECT);
-PID rightPID(&InputRight, &OutputRight, &SetpointRight, 2.5, 0.5, 0, DIRECT);
-
 // Initial motor speeds
-int motorSpeedLeft = 200;
-int motorSpeedRight = 200;
+int motorSpeedLeft = 175;
+int motorSpeedRight = 175;
+
+int finished = 0;
 
 // Floats to hold colour arrays
 float colourArray[] = {0, 0, 0};
@@ -139,52 +135,75 @@ int isBlackLine() {
 void lightChallenge() {
   int colour;
   colour = getColour();
-  Serial.println(colour);
 
   switch (colour) {
     case 1: // Red - Turn left
-      Serial.println("R");
+      Serial.println("Red");
       turnLeft();
       break;
     case 2: // Green - Right turn
-      Serial.println("G");
+      Serial.println("Green");
       turnRight();
       break;
     case 5: // Yellow - 180 Turn
-      Serial.println("Y");
+      Serial.println("Yellow");
       uTurn();
       break;
     case 4: // Purple - 2 left turns
-      Serial.println("P");
+      Serial.println("Purple");
       turnLeft2();
       break;
     case 3: // Blue - 2 right turns
-      Serial.println("B");
+      Serial.println("Blue");
       turnRight2();
       break;
     case 6: // Black (sound challenge/finish)
-      Serial.println("B");
+      Serial.println("Black");
+      soundChallenge();
       break;
   }
 }
 
 void soundChallenge() {
-  int mic_1 = analogRead(MIC1);
-  int mic_2 = analogRead(MIC2);
-  Serial.print("MIC1: ");
-  Serial.println(mic_1);
-  Serial.print("MIC2: ");
-  Serial.println(mic_2);
+  delay(2000);
+  int mic_1, mic_2, highest1 = 0, highest2 = 0;
 
-  if (mic_1 > 550) {
-    Serial.println("turn left");
-  } else if (mic_1 > 70) {
-    Serial.println("turn right");
-  } else {
-    Serial.println("end maze");
+  for (int i = 1; i <= 10; i++) {
+    mic_1 = analogRead(MIC1);
+    mic_2 = analogRead(MIC2);
+    if (mic_1 > highest1) {
+      highest1 = mic_1;
+    }
+    if (mic_2 > highest2) {
+      highest2 = mic_2;
+    }
   }
 
-  delay(1000);
+  Serial.print("Highest 1: ");
+  Serial.println(highest1);
+  Serial.print("Highest 2: ");
+  Serial.println(highest2);
+
+  //  int mic_1 = analogRead(MIC1);
+  //  int mic_2 = analogRead(MIC2);
+  //  Serial.print("MIC1: ");
+  //  Serial.println(mic_1);
+  //  Serial.print("MIC2: ");
+  //  Serial.println(mic_2);
+
+  if (highest2 > 200) {
+    Serial.println("turn right");
+    turnLeft();
+  } else if (highest2 > 145) {
+    Serial.println("turn left");
+    turnRight();
+  } else {
+    Serial.println("end maze");
+    playSound();
+    finished = 1;
+  }
+
+  delay(500);
 }
 
 void offLED() {
@@ -249,11 +268,11 @@ int getColour() {
   colourArray[2] = (colourArray[2] - blackArray[2]) / greyDiff[2] * 255;
 
   // Print out RGB values
-  for (int c = 0; c <= 2; c++) {
-    Serial.println(colourArray[c]);
-  }
+//  for (int c = 0; c <= 2; c++) {
+//    Serial.println(colourArray[c]);
+//  }
 
-  if (colourArray[0] < 10 ) {
+  if (colourArray[0] < 60) {
     return 6; // black//
   } else if (colourArray[0] >= 120 && colourArray[2] > 85) {
     return 5; // yellow//
@@ -296,7 +315,6 @@ void playSound() {
   };
 
   for (int thisNote = 0; thisNote < 29; thisNote++) {
-
     // to calculate the note duration, take one second
     // divided by the note type.
     //e.g. quarter note = 1000 / 4, eighth note = 1000/8, etc.
@@ -312,63 +330,74 @@ void playSound() {
   }
 }
 
+void correctLeft() {
+  motorL.stop();
+  motorR.stop();
+  motorL.run(-motorSpeedLeft - 10);
+  motorR.run(-motorSpeedRight - 10);
+  delay(10);
+  motorL.stop();
+  motorR.stop();
+}
+
+void correctRight() {
+  motorL.stop();
+  motorR.stop();
+  motorL.run(motorSpeedLeft - 10);
+  motorR.run(motorSpeedRight - 10);
+  delay(10);
+  motorL.stop();
+  motorR.stop();
+}
+
 void setup() {
   Serial.begin(9600);
   led.setpin(13);
-
-  double left = 0, right = 0;
-  for (int i = 0; i < 10; i++) {
-    InputLeft = analogRead(0);
-    InputRight = analogRead(1);
-    left += InputLeft;
-    right += InputRight;
-    delay(100);
-  }
-
-  // Initialise PID
-  SetpointLeft = left / 10;
-  SetpointRight = right / 10;
-
-  Serial.print("Setpoint Left: ");
-  Serial.println(SetpointLeft);
-  Serial.print("Setpoint Right: ");
-  Serial.println(SetpointRight);
-
-  leftPID.SetMode(AUTOMATIC);
-  rightPID.SetMode(AUTOMATIC);
 }
 
 void loop() {
-  InputLeft = analogRead(IR_LEFT);
-  InputRight = analogRead(IR_RIGHT);
+  int IRLeft = analogRead(IR_LEFT);
+  int IRRight = analogRead(IR_RIGHT);
+  
+  // Scale input from IR
+  IRLeft = IRLeft / 1023 * 5;
+  IRRight = IRRight / 1023 * 5;
 
-  Serial.print("IR Left: ");
-  Serial.println(InputLeft);
-  Serial.print("IR Right: ");
-  Serial.println(InputRight);
+  if (finished) {
+    motorL.stop();
+    motorR.stop();
+  } else {
+    motorL.run(-motorSpeedLeft);
+    motorR.run(motorSpeedRight);
 
-  leftPID.Compute();
-  rightPID.Compute();
+    //    Serial.print("IR Left: ");
+    //    Serial.println(IRLeft);
+    //    Serial.print("IR Right: ");
+    //    Serial.println(IRRight);
+
+    if (IRLeft < 3) {
+      correctLeft();
+    }
+    if (IRRight < 3) {
+      correctRight();
+    }
+  }
 
   // Check for black line
   if (isBlackLine()) {
     motorL.stop();
     motorR.stop();
     delay(500);
-    soundChallenge();
+    lightChallenge();
     delay(500);
   }
 
-  // Set speed of motors based on PID algorithm
-  motorSpeedLeft = (OutputLeft / 2) + 170;
-  motorSpeedRight = (OutputRight / 2) + 170;
-
-  Serial.print("Motor Speed Left: ");
-  Serial.println(motorSpeedLeft);
-  Serial.print("Motor Speed Right: ");
-  Serial.println(motorSpeedLeft);
-  Serial.println();
-
-  motorL.run(-motorSpeedLeft);
-  motorR.run(motorSpeedRight);
+  if (!finished) {
+    if (IRLeft < 3) {
+      correctLeft();
+    }
+    if (IRRight < 3) {
+      correctRight();
+    }
+  }
 }
